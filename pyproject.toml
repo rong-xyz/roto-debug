@@ -1,12 +1,15 @@
 [project]
-name = "mcp-server-python-template"
+name = "roto-debug"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP server for RotoTV debugging and CLI operations"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ipython>=9.5.0",
     "mcp>=1.13.1",
+    "httpx>=0.28.1",
+    "boto3>=1.35.93",
+    "fastmcp>=2.14.1",
 ]
 
 [tool.setuptools]
@@ -16,5 +19,5 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [project.scripts]
-# Run with: `uv run mcp-server`
-mcp-server = "mcp_server.server:main"
+# Run with: `uv run roto-debug`
+roto-debug = "mcp_server.server:main"

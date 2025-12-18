@@ -1,228 +1,273 @@
-# MCP Server Python Template
+# RotoTV Debug MCP Server
 
-A production-ready template for building Model Control Protocol (MCP) servers in Python. This template provides a solid foundation with best practices, proper project structure, and example implementations to help you quickly develop your own MCP server.
+A Model Context Protocol (MCP) server providing debugging and administrative tools for RotoTV backend. This server wraps all CLI functions from the RotoTV backend console as MCP tools that can be used with Claude and other MCP clients.
 
-## 🚀 Quick Start
+## Features
 
-### Prerequisites
-- Python 3.12+ 
-- [uv](https://docs.astral.sh/uv/) package manager (recommended) or pip
+The server provides the following MCP tools:
 
-### 1. Create Your Repository
+- **generate_uuid** - Generate UUID strings
+- **create_session** - Create a new play session from a project
+- **create_interaction** - Submit user interaction to a session
+- **get_m3u8** - Fetch m3u8 playlist from session API
+- **get_session_state** - Fetch session state from API
+- **get_project_state** - Fetch project information from API
+- **query_cloudwatch_logs** - Query CloudWatch Logs and return CSV results
 
-**Option A: Use Template (Recommended)**
-1. Click the **"Use this template"** button on GitHub page→ **"Create a new repository"** 
-2. Name your repository and clone it:
-   ```bash
-   git clone <your-new-repo-url>
-   cd <your-repo-name>
-   ```
+All secrets (auth tokens, AWS credentials) are read from environment variables for security.
 
-**Option B: Direct Clone This Repository**
+## Prerequisites
 
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) package manager (recommended)
+
+## Installation
+
+1. Clone or navigate to the repository:
 ```bash
-git clone https://github.com/pathintegral-institute/mcp-server-python-template.git
-cd mcp-server-python-template
+cd /home/trsjtu17/roto-debug
 ```
 
-**Create virtual env and activate it**
+2. Create and activate virtual environment:
 ```bash
 uv venv
-source .venv/bin/activate # on Unix-like system
-# .venv\Scripts/activate # on Windows
+source .venv/bin/activate  # on Unix-like systems
+# .venv\Scripts\activate  # on Windows
 ```
 
-**Install Dependencies**
+3. Install dependencies:
 ```bash
-uv sync  # Install dependencies
+uv sync
 ```
 
-
-
-
-### 2. Install for Development
+4. Install for development:
 ```bash
-uv pip install -e .  # Enables the `uv run mcp-server` command
+uv pip install -e .
 ```
 
-### 3. Run Your Server
-```bash
-# Method 1: Using the configured script (recommended)
-uv run mcp-server
+## Environment Variables Setup
 
-# Method 2: Direct execution
+### Authentication Token (Required)
+
+The authentication token **must** be set in an environment variable. All environments (prod, stage, dev) use the same token:
+
+```bash
+export ROTO_AUTH_TOKEN="your_auth_token"
+```
+
+**Note**: This is required. If not set, tools will return an error asking you to set the ROTO_AUTH_TOKEN environment variable
+
+### AWS Credentials (for CloudWatch Logs)
+
+Required only if you plan to use the `query_cloudwatch_logs` tool:
+
+```bash
+export AWS_ACCESS_KEY_ID="your_access_key"
+export AWS_SECRET_ACCESS_KEY="your_secret_key"
+export AWS_DEFAULT_REGION="your_region"
+```
+
+**Note**: The server will validate these credentials only when you use the CloudWatch tool.
+
+**Important**: The MCP server reads directly from environment variables. It does NOT load `.env` files. Set environment variables in your shell or in your MCP client configuration.
+
+## Running the Server
+
+### Method 1: Using the configured script (recommended)
+```bash
+uv run roto-debug
+```
+
+### Method 2: Direct execution
+```bash
 uv run python src/mcp_server/server.py
 ```
 
-Your MCP server is now running and ready to accept connections!
+The server runs in stdio mode by default for MCP communication.
 
-## 📁 Project Structure
+## MCP Tool Usage
 
+Once the server is running and connected to an MCP client (like Claude Desktop), you can use the following tools:
+
+### generate_uuid
+```python
+# Generate one UUID
+generate_uuid()
+
+# Generate multiple UUIDs
+generate_uuid(count=5)
 ```
-mcp-server-python-template/
-├── src/mcp_server/           # Main package directory
-│   ├── __init__.py          # Package initialization
-│   ├── server.py            # FastMCP server entrypoint
-│   └── lily.jpeg            # Example static asset
-├── pyproject.toml           # Project configuration & dependencies
-├── uv.lock                  # Locked dependency versions
-├── README.md                # This file
-└── AGENTS.md                # Detailed development guidelines for AI Agent
+
+### create_session
+```python
+# Create a session (uses env var token)
+create_session(env="stage", project_id="PROJECT_UUID")
+
+# Create a session with custom token
+create_session(env="prod", project_id="PROJECT_UUID", token="custom_token")
 ```
 
-## 🛠️ Building Your MCP Server
+### create_interaction
+```python
+# Submit interaction
+create_interaction(
+    env="stage",
+    session_id="SESSION_UUID",
+    node_id="NODE_UUID",
+    message="Your input message"
+)
+```
+
+### get_m3u8
+```python
+# Get m3u8 playlist
+get_m3u8(env="stage", session_id="SESSION_UUID")
+
+# Get m3u8 with play index
+get_m3u8(env="stage", session_id="SESSION_UUID", play_index=5)
+```
+
+### get_session_state
+```python
+# Get session state
+get_session_state(env="stage", session_id="SESSION_UUID")
+```
+
+### get_project_state
+```python
+# Get project state
+get_project_state(env="stage", project_id="PROJECT_UUID")
+```
+
+### query_cloudwatch_logs
+```python
+# Query logs by session ID (last 24 hours)
+query_cloudwatch_logs(env="stage", session_id="SESSION_UUID")
+
+# Custom CloudWatch query
+query_cloudwatch_logs(
+    env="prod",
+    query="fields @timestamp, record.message | filter @message like /ERROR/",
+    hours=6
+)
+
+# Query with time ranges
+query_cloudwatch_logs(env="stage", session_id="SESSION_UUID", hours=2)
+query_cloudwatch_logs(env="stage", session_id="SESSION_UUID", days=7)
+query_cloudwatch_logs(env="stage", session_id="SESSION_UUID", weeks=1)
+```
+
+## Configuring MCP Clients
+
+### Claude Desktop
+
+Add to your Claude Desktop configuration file:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "roto-debug": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/home/trsjtu17/roto-debug",
+        "run",
+        "roto-debug"
+      ],
+      "env": {
+        "ROTO_AUTH_TOKEN": "your_auth_token",
+        "AWS_ACCESS_KEY_ID": "your_aws_key",
+        "AWS_SECRET_ACCESS_KEY": "your_aws_secret",
+        "AWS_DEFAULT_REGION": "your_region"
+      }
+    }
+  }
+}
+```
+
+### Other MCP Clients
+
+For other MCP clients, use the following command:
+```bash
+cd /home/trsjtu17/roto-debug && uv run roto-debug
+```
+
+Ensure environment variables are set in the client's environment or configuration.
+
+## Development
+
+### Project Structure
+```
+roto-debug/
+├── src/mcp_server/
+│   ├── __init__.py
+│   ├── server.py      # Main MCP server with all tools
+│   └── config.py      # Configuration and environment variable handling
+├── pyproject.toml     # Project configuration & dependencies
+├── uv.lock           # Locked dependency versions
+└── README.md         # This file
+```
 
 ### Adding New Tools
 
-Tools are the core functionality of your MCP server. Here's how to add them:
-
-1. **Open `src/mcp_server/server.py`**
-2. **Add your tool function with the `@mcp.tool()` decorator:**
+To add new tools, edit `src/mcp_server/server.py` and add functions decorated with `@mcp.tool()`:
 
 ```python
 @mcp.tool()
-def your_tool_name(param1: str, param2: int) -> TextContent:
-    """Brief description of what this tool does.
-    
+def your_new_tool(param1: str, param2: int) -> str:
+    """Description of your tool.
+
     Args:
-        param1: Description of first parameter
-        param2: Description of second parameter
-    
+        param1: Description
+        param2: Description
+
     Returns:
-        Description of what this returns
+        Description of return value
     """
-    # Your implementation here
-    result = f"Processed {param1} with value {param2}"
-    return TextContent(type="text", text=result)
+    # Implementation
+    return "result"
 ```
 
-### Working with Different Content Types
+### Testing
 
-#### Text Content
-```python
-from mcp.types import TextContent
-
-@mcp.tool()
-def get_text_data() -> TextContent:
-    return TextContent(type="text", text="Your text here")
-```
-
-#### Image Content (from file)
-```python
-import base64
-from mcp.types import ImageContent
-
-@mcp.tool()
-def get_image() -> ImageContent:
-    with open("path/to/image.jpg", "rb") as f:
-        image_data = base64.b64encode(f.read()).decode("utf-8")
-    return ImageContent(data=image_data, mimeType="image/jpeg", type="image")
-```
-
-#### Multiple Content Types
-```python
-from typing import List
-from mcp.types import TextContent, ImageContent
-
-@mcp.tool()
-def get_mixed_content() -> List[TextContent | ImageContent]:
-    return [
-        TextContent(type="text", text="Here's an image:"),
-        ImageContent(data=your_base64_data, mimeType="image/png", type="image")
-    ]
-```
-
-### Example Tools in This Template
-
-This template includes example tools to get you started:
-
-1. **`add(a: int, b: int)`** - Simple arithmetic operation
-2. **`get_name_and_image_of_flower()`** - Returns text and image content
-
-## 🔧 Development Workflow
-
-### Running in Different Modes
-
-#### Standard I/O Mode (Default)
-```bash
-uv run mcp-server
-```
-
-#### HTTP Mode
-Uncomment the following line in `server.py`:
-```python
-# mcp.run(transport="stdio")  # Comment this out
-mcp.run(transport="streamable_http")  # Uncomment this
-```
-
-Then run:
-```bash
-uv run mcp-server
-```
-
-### Testing Your Tools
-#### Use MCP Inspector (Recommended)
-You can test and debug your MCP servers by MCP Inspector. Please refer to the [official doc](https://modelcontextprotocol.io/legacy/tools/inspector).
-
-
-### Add your local MCP server to MCP Client
-Take Lucien Desktop as example:
-<img src="./assets/lucien-mcp-settings.png">
-
-And you should be able to let LLM call your tools:
-<img src="./assets/lucien-chat-example.png">
-
-
-### Adding Dependencies
-
-Add new dependencies:
-```shell
-uv add [package_name]
-```
-
-the `pyproject.toml` will be updated automatically
-
-
-## Let Others Use It
-
-Let anyone run your MCP server without cloning or installing globally using uvx:
+Use the [MCP Inspector](https://modelcontextprotocol.io/legacy/tools/inspector) to test and debug:
 
 ```bash
-uvx --from 'git+https://github.com/[AUTHOR]/[REPO_NAME]@<TAG_OR_BRANCH_OR_SHA>' mcp-server
+npx @modelcontextprotocol/inspector uv --directory /home/trsjtu17/roto-debug run roto-debug
 ```
 
-What to fill in:
-- `git+https://github.com/[AUTHOR]/[REPO_NAME]`: Your public GitHub repo. The repo must be a valid Python package with a `pyproject.toml`.
-- `@<TAG_OR_BRANCH_OR_SHA>`: Optional but recommended. Pin to a release tag (e.g. `@v0.1.0`) for reproducible installs; omit to use the default branch.
-- `mcp-server`: The console script name. This template already defines it in `pyproject.toml` as `mcp-server = "mcp_server.server:main"`.
+## Security Notes
 
-How it works:
-- `uvx` creates an isolated, ephemeral environment, installs your package (+ deps from `pyproject.toml`/`uv.lock`), then runs the specified entry point. Nothing is installed globally.
+- **Never hardcode secrets** - All sensitive data (tokens, AWS credentials) must be in environment variables
+- **Default tokens** - The fallback tokens are for development/testing only
+- **AWS credentials** - Keep your AWS credentials secure and never commit them to version control
+- **Token override** - Each tool accepts an optional `token` parameter to override the environment variable
 
-Client usage:
-- Most MCP clients let you specify a command to launch a server. Use the same one‑liner above as the command. If your server requires flags, add them after `mcp-server`.
-- This template defaults to stdio transport. If you switch to HTTP in `server.py`, configure your client accordingly and ensure the port is reachable.
+## Troubleshooting
 
-Tips for maintainers:
-- Publish release tags so others can pin versions (stability and cache‑friendly).
-- Keep `requires-python` and dependencies up to date; commit `uv.lock` for reproducibility.
-- Ensure the entry point remains `mcp-server` (or update documentation if renamed).
+### AWS Credentials Error
+If you see "Missing required AWS credential", ensure you've set:
+```bash
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
+export AWS_DEFAULT_REGION="..."
+```
 
+### Authentication Errors
+If requests fail with 401/403:
+1. Check your auth token is correct
+2. Set the `ROTO_AUTH_TOKEN` environment variable
+3. Or pass the `token` parameter explicitly to override
 
-## Contributing To Our Registry
-We're maintaining [a fully open sourced MCP registry](https://mcpm.sh/registry/). If you're interested in contributing, please check [this doc](https://github.com/pathintegral-institute/mcpm.sh/blob/main/mcp-registry/README.md#1-create-a-github-issue-easiest).
+### Connection Errors
+If you can't connect to the API:
+1. Verify the environment (prod/stage/dev) is correct
+2. Check network connectivity
+3. Ensure the backend URLs in `config.py` are up to date
 
-## 📚 Additional Resources
+## License
 
-- **[MCP Documentation](https://modelcontextprotocol.io/docs)** - Official MCP documentation
-- **[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)** Official MCP SDK repo
-
-## 📄 License
-
-MIT Licence
-
----
-
-**Happy building! 🎉** 
-
-Need help? Check the [issues page](../../issues)
+MIT License
