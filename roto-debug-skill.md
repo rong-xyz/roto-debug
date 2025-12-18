@@ -84,6 +84,105 @@ To test M3U8 playlist progression:
 
 **Note**: The `play_index` (x-play-index header) tells the backend which video segment the player is currently on. When the player reaches the last segment, the backend adds the next video to the playlist.
 
+## Understanding Video/Node Distribution Logic
+
+### Core M3U8 Request Flow (session.py:128-228)
+
+When the frontend requests the M3U8 playlist:
+
+1. **Load session state** from Redis
+2. **Check x-play-index header** (indicates player position)
+3. **Calculate remaining duration** = sum of unplayed segments after current index
+4. **Trigger next video if**:
+   - Remaining duration < 10 seconds, OR
+   - Current index is last segment, OR
+   - Current index is second-to-last segment
+5. **Special case**: When index=0 (player start), trigger task cascade for tasks with no dependencies
+6. If triggered, call `find_next_video_node()` to get next video
+7. **Return cumulative M3U8** with all videos played so far
+
+### find_next_video_node() Decision Tree (play_service.py:61-436)
+
+This is the **core logic** that determines what video to play next. Understanding this is critical for debugging.
+
+**Step 1: Check if current node can proceed**
+
+The function first asks: "Can we leave the current node?"
+
+- **PREBUILT_VIDEO with attach_variables** (lines 91-212):
+  - Check if generated video is completed and played
+  - If completed but not played → Return generated video
+  - If completed and played → Can proceed to next node
+  - If not completed:
+    - Check loop play count (lines 107-108)
+    - For VIDEO type: If loop_play_count >= 3 → Try fallback video (lines 143-177)
+    - If generation failed → Try fallback video (lines 178-203)
+    - Otherwise → Return loop video as placeholder
+
+- **BRANCHING nodes** (lines 213-239):
+  - Check if branch index variable is completed
+  - If not completed → Return loop video
+  - If completed → Can proceed, will use branch_index to select next edge
+
+- **INTERACTION nodes** (lines 241-273):
+  - Check if wait_seconds > video_duration
+  - If so, calculate max_loops = ceil(wait_seconds / video_duration)
+  - Check loop count and user_input_ready
+  - If played_count < max_loops and user not ready → Keep looping interaction video
+  - Otherwise → Can proceed
+
+**Step 2: If cannot proceed, return current node's video** (lines 275-283)
+
+**Step 3: Check if current node is end node** (lines 285-316)
+- Even if marked as `is_end=true`, verify all attach_variables are satisfied
+- If generated video hasn't been played yet, don't end (return generated video)
+- Only end when all videos played
+
+**Step 4: Get next node from graph** (lines 318-351)
+- Use project graph (edges) to find next_node_ids
+- For BRANCHING nodes with multiple edges, use branch_index to select correct edge
+- Recursively skip BRANCHING nodes if decision already made (lines 356-374)
+
+**Step 5: Return next node's video based on type** (lines 376-436)
+
+- **PREBUILT_VIDEO**:
+  - If has attach_variables: Return generated video if ready, else loop video
+  - No attach_variables: Return prebuilt_video directly
+
+- **INTERACTION**: Return interaction video (prebuilt_video)
+
+- **BRANCHING**: Return loop video
+
+### Key Constants and Thresholds
+
+- **MAX_LOOPS_FOR_VIDEO = 3** (play_service.py:36) - Maximum loops for VIDEO type attach_variables
+- **Remaining duration threshold = 10 seconds** (session.py:164) - Triggers next video loading
+- **Session TTL = 1 day** - Sessions expire after 24 hours in Redis
+
+### Task Cascade Logic (play_service.py:458-543)
+
+When user submits interaction or player starts (index=0):
+
+1. **Load session state** - Get latest runtime variables and task statuses
+2. **Find triggerable tasks** - Tasks with status "pending" where `can_trigger()` returns true
+   - `can_trigger()` checks if all input dependencies are satisfied
+3. **Atomic status update** - Try to change task from pending→running (concurrency control)
+   - Only one worker can acquire each task
+4. **Execute tasks in parallel** - All triggerable tasks run simultaneously
+5. **Recursive cascade** - When any task completes, it calls cascade again
+   - This naturally handles dependency chains: A→B→C
+
+### Video Type vs Variable Lookup
+
+**Critical detail** (play_service.py:96-101, 291-297, 382-386):
+
+Different attach_variable types use different variable IDs:
+
+- **AUDIO/STRING attachments**: Use `node.node_id` as variable_id (output variable)
+- **VIDEO attachments**: Use `attach_var.variable_id` (input variable)
+
+This affects which runtime variable you need to check in session state.
+
 ## Key Session State Fields
 
 When analyzing session state, focus on:
@@ -96,8 +195,8 @@ When analyzing session state, focus on:
   - `clip_id`: Video UUID (null if not ready)
   - `value`: User input value or other data
 - **task_status**: Status of all background tasks
-- **video_list**: Chronological list of videos played
-- **video_node_list**: Chronological list of nodes visited
+- **video_list**: Chronological list of clip_ids that have been played
+- **video_node_list**: Chronological list of node_ids visited (can have duplicates for loops)
 
 ## Common Issues and Solutions
 
