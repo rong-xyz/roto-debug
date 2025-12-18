@@ -386,7 +386,7 @@ def query_cloudwatch_logs(
     hours: Optional[int] = None,
     days: Optional[int] = None,
     weeks: Optional[int] = None,
-    limit: int = 100
+    limit: int = 10000
 ) -> str:
     """Query CloudWatch Logs and return results as CSV format.
 
