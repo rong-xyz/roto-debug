@@ -386,7 +386,6 @@ def query_cloudwatch_logs(
     hours: Optional[int] = None,
     days: Optional[int] = None,
     weeks: Optional[int] = None,
-    limit: int = 10000
 ) -> str:
     """Query CloudWatch Logs and return results as CSV format.
 
@@ -403,11 +402,11 @@ def query_cloudwatch_logs(
         hours: Query logs from last N hours
         days: Query logs from last N days (default: 1 if no time range specified)
         weeks: Query logs from last N weeks
-        limit: Max number of results (default: 100)
 
     Returns:
         CSV formatted log results
     """
+    limit = 10000
     try:
         # Lazy import boto3 to avoid requiring it if not used
         import boto3
